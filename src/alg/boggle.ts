@@ -1,4 +1,7 @@
 import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+import { publishReplay, refCount, map, take } from 'rxjs/operators';
 
 export interface Board {
     rows: string[][];
@@ -13,49 +16,73 @@ interface Pos extends ValidMove {
     previousMoves: ValidMove[];
 }
 
+interface Dictionary {
+    [key: string]: boolean;
+}
+
 @Injectable()
 export class BoggleService {
-    public solve(board: Board): Set<string> {
-        const rowMax = board.rows[0].length;
-        const colMax = board.rows.length;
+    private dictionary: Observable<Dictionary>;
 
-        const words = new Set();
-        const positions: Pos[] = [];
+    constructor(private http:  HttpClient) {
+        // dictionary from https://github.com/dwyl/english-words/blob/master/words_dictionary.json
+        this.dictionary = this.http.get<Dictionary>('/assets/words_dictionary.json')
+        .pipe(
+            publishReplay(),
+            refCount()
+        );
 
-        for (let rowCount = 0; rowCount < rowMax; rowCount++) {
-            for (let colCount = 0; colCount < colMax; colCount++) {
-                positions.push({
-                    row: rowCount,
-                    col: colCount,
-                    previousMoves: []
+        // pre-load dictionary
+        this.dictionary.pipe(take(1)).subscribe();
+    }
+
+    public solve(board: Board): Observable<Set<string>> {
+        return this.dictionary.pipe(
+            map(dictionary => {
+                const rowMax = board.rows[0].length;
+                const colMax = board.rows.length;
+
+                const words = new Set();
+                const positions: Pos[] = [];
+
+                for (let rowCount = 0; rowCount < rowMax; rowCount++) {
+                    for (let colCount = 0; colCount < colMax; colCount++) {
+                        positions.push({
+                            row: rowCount,
+                            col: colCount,
+                            previousMoves: []
+                        });
+                    }
+                }
+
+                while (positions.length) {
+                    const move = positions.shift();
+
+                    const previousMoves: ValidMove[] = [...move.previousMoves];
+                    previousMoves.push({ row: move.row, col: move.col });
+
+                    positions.push(...this.getValidPositions(board, rowMax, colMax, previousMoves, move.row, move.col));
+
+                    let word = '';
+                    move.previousMoves.forEach(previousMove => {
+                        word += board.rows[previousMove.row][previousMove.col];
+                    });
+                    word += board.rows[move.row][move.col];
+
+                    if (dictionary[word.toLowerCase()]) {
+                        words.add(word);
+                    }
+                }
+
+                words.forEach(word => {
+                    if (word.length < 3) {
+                        words.delete(word);
+                    }
                 });
-            }
-        }
 
-        while (positions.length) {
-            const move = positions.shift();
-
-            const previousMoves: ValidMove[] = [...move.previousMoves];
-            previousMoves.push({ row: move.row, col: move.col });
-
-            positions.push(...this.getValidPositions(board, rowMax, colMax, previousMoves, move.row, move.col));
-
-            let word = '';
-            move.previousMoves.forEach(previousMove => {
-                word += board.rows[previousMove.row][previousMove.col];
-            });
-            word += board.rows[move.row][move.col];
-
-            words.add(word);
-        }
-
-        words.forEach(word => {
-            if (word.length < 3) {
-                words.delete(word);
-            }
-        });
-
-        return words;
+                return words;
+            })
+        );
     }
 
     private getValidPositions(board: Board, rowMax: number, colMax: number, previousMoves: ValidMove[], rowPosition: number,

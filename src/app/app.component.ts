@@ -1,6 +1,7 @@
 import { Component, OnInit, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { FormBuilder, Validators, FormGroup } from '@angular/forms';
 import { Board, BoggleService } from '../alg/boggle';
+import { take } from 'rxjs/operators';
 
 @Component({
   selector: 'app-root',
@@ -47,11 +48,15 @@ export class AppComponent implements OnInit {
     };
 
     // based on: https://stackoverflow.com/questions/20069828/how-to-convert-set-to-array
-    this.words = Array.from(this.boggleService.solve(board)).map(word => ({
-      word: word,
-      score: this.getScore(word)
-    }));
-    this.changeDetectorRef.markForCheck();
+    this.boggleService.solve(board).pipe(
+      take(1)
+    ).subscribe(words => {
+      this.words = Array.from(words).map(word => ({
+        word: word,
+        score: this.getScore(word)
+      }));
+      this.changeDetectorRef.markForCheck();
+    });
   }
 
   getScore(word: string) {
