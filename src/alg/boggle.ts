@@ -3,6 +3,13 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { publishReplay, refCount, map, take } from 'rxjs/operators';
 
+// chain of resources to figure out what a trie is and to use it:
+// https://stackoverflow.com/questions/37711682/javascript-lodash-binary-search-by-function
+// https://softwareengineering.stackexchange.com/questions/86106/search-for-a-sub-string-in-a-given-array-of-strings
+// https://softwareengineering.stackexchange.com/a/86111
+// https://stackoverflow.com/questions/17476343/can-you-do-binary-search-in-array-of-strings-in-javascript
+import * as trie from 'trie/trie.js';
+
 export interface Board {
     rows: string[][];
 }
@@ -23,6 +30,7 @@ interface Dictionary {
 @Injectable()
 export class BoggleService {
     private dictionary: Observable<Dictionary>;
+    private myTrie = new trie.Trie();
 
     constructor(private http:  HttpClient) {
         // dictionary from https://github.com/dwyl/english-words/blob/master/words_dictionary.json
@@ -39,6 +47,11 @@ export class BoggleService {
     public solve(board: Board): Observable<Set<string>> {
         return this.dictionary.pipe(
             map(dictionary => {
+                const dictionaryArray = Object.keys(dictionary);
+                dictionaryArray.forEach(key => {
+                    this.myTrie.addWord(key);
+                });
+
                 const rowMax = board.rows[0].length;
                 const colMax = board.rows.length;
 
@@ -58,27 +71,22 @@ export class BoggleService {
                 while (positions.length) {
                     const move = positions.shift();
 
-                    const previousMoves: ValidMove[] = [...move.previousMoves];
-                    previousMoves.push({ row: move.row, col: move.col });
-
-                    positions.push(...this.getValidPositions(board, rowMax, colMax, previousMoves, move.row, move.col));
-
                     let word = '';
                     move.previousMoves.forEach(previousMove => {
                         word += board.rows[previousMove.row][previousMove.col];
                     });
                     word += board.rows[move.row][move.col];
 
-                    if (dictionary[word.toLowerCase()]) {
+                    if (word.length > 2 && dictionary[word]) {
                         words.add(word);
                     }
-                }
 
-                words.forEach(word => {
-                    if (word.length < 3) {
-                        words.delete(word);
+                    if (this.myTrie.isValidPrefix(word)) {
+                        const previousMoves: ValidMove[] = [...move.previousMoves];
+                        previousMoves.push({ row: move.row, col: move.col });
+                        positions.push(...this.getValidPositions(board, rowMax, colMax, previousMoves, move.row, move.col));
                     }
-                });
+                }
 
                 return words;
             })
